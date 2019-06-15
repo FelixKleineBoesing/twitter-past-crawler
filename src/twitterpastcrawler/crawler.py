@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+from bs4.element import NavigableString, Tag
 import requests
 import sys
 import random
@@ -31,7 +32,8 @@ class Tweet:
             links(list): Any external links within the tweet.
             replies(int): The number of replies to this tweet.
             retweets(int): The number of times this tweet has been retweeted.
-            favorites(int): The number of favorites this tweet has recieved."""
+            favorites(int): The number of favorites this tweet has recieved.
+            hashtags(list): A list of hashtags that are used in this tweet"""
     def __init__(self):
         self.links = []
 
@@ -46,6 +48,7 @@ def clean_text(text):
     temp = temp.replace("\n", " ")
     temp = temp.replace("\r", " ")
     temp = temp.replace(",", " ")
+    temp = temp.replace("|", " ")
     temp.strip()
     return temp
 
@@ -117,8 +120,17 @@ def html_to_tweet_object(element):
                 text = c
                 for p in text.findChildren():
                     if has_class(p, "tweet-text"):
-                        if hasattr(p, "contents") and not isinstance(p.contents[0], type(p)):
-                            tweet.text = clean_text(p.contents[0])
+                        if hasattr(p, "contents"):
+                            tweet.text = ""
+                            tweet.hashtags = ""
+                            for content in p.contents:
+                                if isinstance(content, NavigableString):
+                                    tweet.text += clean_text(content)
+                                if isinstance(content, Tag):
+                                    if "twitter-hashtag" in content.attrs["class"] \
+                                            if "class" in content.attrs else False and len(content.text) > 1:
+                                        tweet.text += content.text[1:]
+                                        tweet.hashtags += ("; " if len(tweet.hashtags) > 0 else "") + content.text
 
                     if has_class(p, "twitter-timeline-link"):
                         if "data-expanded-url" in p.attrs:
@@ -162,7 +174,7 @@ def tweets_to_csv(crawler, tweet):
             pass
         else:
             with open(crawler.output_file, "wt") as f:
-                f.write(",".join(crawler.parameters))
+                f.write("|".join(crawler.parameters))
                 f.write("\n")
 
     parameters = crawler.parameters
@@ -177,7 +189,7 @@ def tweets_to_csv(crawler, tweet):
             else:
                 f.write("Null")
             if i < len(parameters) - 1:
-                f.write(",")
+                f.write("|")
             else:
                 f.write("\n")
 
@@ -196,14 +208,11 @@ class TwitterCrawler:
             parameters(list): The parameters that will be output to the csv file in the case that the user uses the default handler.
         """
 
-    def __init__(self, query="hoge", lang='en', max_depth=None, parser=parse_html, 
-                    tweet_parser=html_to_tweet_object, handler=tweets_to_csv, 
-                    init_min_pos=None, output_file="output",
-                    parameters=["tweet_id", "account_name", "user_id", 
-                                "timestamp", "text", "links", "repiles",
-                                 "retweets", "favorites"]):
+    def __init__(self, query="hoge", max_depth=None, parser=parse_html, tweet_parser=html_to_tweet_object,
+                 handler=tweets_to_csv, init_min_pos=None, output_file="output",
+                 parameters=["tweet_id", "account_name", "user_id", "timestamp", "text", "links", "repiles",
+                             "retweets", "favorites", "hashtags"]):
         self.query = query
-        self.lang = lang
         self.max_depth = max_depth
         self.parser = lambda x, y: parser(x.tweet_parser, y)
         self.tweet_parser = tweet_parser
@@ -217,7 +226,6 @@ class TwitterCrawler:
 
     def crawl(self):
         """Actual crawl function. Crawls according to the initialization of the crawler."""
-        print("Commencing crawl...")
         connection_cut = False
         seed = self.last_min_pos if self.last_min_pos is not None else "hoge"
         response = self.get_request_from_last_position(seed)
@@ -286,8 +294,8 @@ class TwitterCrawler:
                                               "src": "typd",
                                               "include_entities": "1",
                                               "include_available_features": "1",
-                                              "lang": self.lang
-                                            }, headers=headers)
+                                              "lang": "en"
+                                              }, headers=headers)
 
     def dump(self):
         """Print the status of the crawler to stdout."""

@@ -13,3 +13,4 @@ build/
 log*.txt
 *.csv
 sample.html
+.idea
